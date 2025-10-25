@@ -1,0 +1,356 @@
+#!/usr/bin/env python3
+"""
+Inmate Data Scraper - Web Scraping Solution
+Scrapes real inmate data from public jail websites
+"""
+
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+import requests
+from bs4 import BeautifulSoup
+import re
+from datetime import datetime
+import json
+
+app = Flask(__name__)
+CORS(app)  # Enable CORS for frontend access
+
+class InmateScraper:
+    """Scrapes inmate data from various jail websites"""
+    
+    def __init__(self):
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+    
+    def scrape_sedgwick_county(self):
+        """
+        Scrape Sedgwick County Jail (Wichita, Kansas)
+        URL: https://www.sedgwickcounty.org/detention/inmates/
+        """
+        try:
+            url = "https://www.sedgwickcounty.org/detention/inmates/"
+            response = requests.get(url, headers=self.headers, timeout=10)
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            inmates = []
+            
+            # Find inmate data (adjust selectors based on actual website structure)
+            inmate_rows = soup.find_all('tr', class_='inmate-row')
+            
+            for row in inmate_rows:
+                try:
+                    inmate_data = {
+                        'name': self._extract_text(row, 'td', 0),
+                        'booking_id': self._extract_text(row, 'td', 1),
+                        'age': self._extract_text(row, 'td', 2),
+                        'gender': self._extract_text(row, 'td', 3),
+                        'race': self._extract_text(row, 'td', 4),
+                        'booking_date': self._extract_text(row, 'td', 5),
+                        'facility': 'Sedgwick County Jail',
+                        'charges': self._extract_charges(row),
+                        'bail': self._extract_bail(row),
+                        'mugshot': self._extract_mugshot(row)
+                    }
+                    inmates.append(inmate_data)
+                except Exception as e:
+                    continue
+            
+            return inmates
+        except Exception as e:
+            print(f"Error scraping Sedgwick County: {e}")
+            return []
+    
+    def scrape_jailbase_alternative(self, state='KS', county=None):
+        """
+        Scrape from JailBase public pages (alternative to API)
+        URL: https://www.jailbase.com/en/arrested/ks
+        """
+        try:
+            base_url = f"https://www.jailbase.com/en/arrested/{state.lower()}"
+            if county:
+                base_url += f"/{county.lower().replace(' ', '-')}"
+            
+            response = requests.get(base_url, headers=self.headers, timeout=10)
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            inmates = []
+            
+            # JailBase uses specific card structure
+            inmate_cards = soup.find_all('div', class_='JailBasePerson')
+            
+            for card in inmate_cards[:50]:  # Limit to 50 results
+                try:
+                    name_elem = card.find('h4', class_='name')
+                    booking_elem = card.find('span', class_='booking-date')
+                    charges_elem = card.find('div', class_='charges')
+                    
+                    inmate_data = {
+                        'name': name_elem.text.strip() if name_elem else 'Unknown',
+                        'booking_date': booking_elem.text.strip() if booking_elem else 'N/A',
+                        'charges': self._parse_charges(charges_elem) if charges_elem else [],
+                        'facility': f'{county} County Jail' if county else 'Unknown',
+                        'mugshot': self._extract_image_src(card),
+                        'booking_id': self._generate_booking_id(),
+                        'age': 'N/A',
+                        'gender': 'N/A',
+                        'race': 'N/A',
+                        'bail': 0
+                    }
+                    
+                    inmates.append(inmate_data)
+                except Exception as e:
+                    continue
+            
+            return inmates
+        except Exception as e:
+            print(f"Error scraping JailBase: {e}")
+            return []
+    
+    def search_inmates(self, query, state='KS', county=None):
+        """
+        Search inmates based on query
+        """
+        # Try multiple sources
+        all_inmates = []
+        
+        # Source 1: JailBase
+        jailbase_data = self.scrape_jailbase_alternative(state, county)
+        all_inmates.extend(jailbase_data)
+        
+        # Source 2: County-specific (if available)
+        if county and county.lower() == 'sedgwick':
+            sedgwick_data = self.scrape_sedgwick_county()
+            all_inmates.extend(sedgwick_data)
+        
+        # Filter by search query
+        if query:
+            query = query.lower()
+            filtered = [
+                inmate for inmate in all_inmates
+                if query in inmate.get('name', '').lower() or
+                   query in inmate.get('booking_id', '').lower() or
+                   any(query in charge.lower() for charge in inmate.get('charges', []))
+            ]
+            return filtered
+        
+        return all_inmates
+    
+    # Helper methods
+    def _extract_text(self, element, tag, index):
+        """Extract text from element"""
+        try:
+            cells = element.find_all(tag)
+            return cells[index].text.strip() if len(cells) > index else 'N/A'
+        except:
+            return 'N/A'
+    
+    def _extract_charges(self, element):
+        """Extract charges list"""
+        try:
+            charges_div = element.find('div', class_='charges')
+            if charges_div:
+                return [c.strip() for c in charges_div.text.split(',')]
+            return ['N/A']
+        except:
+            return ['N/A']
+    
+    def _extract_bail(self, element):
+        """Extract bail amount"""
+        try:
+            bail_text = element.find('span', class_='bail')
+            if bail_text:
+                amount = re.search(r'\$?([\d,]+)', bail_text.text)
+                return int(amount.group(1).replace(',', '')) if amount else 0
+            return 0
+        except:
+            return 0
+    
+    def _extract_mugshot(self, element):
+        """Extract mugshot URL"""
+        try:
+            img = element.find('img', class_='mugshot')
+            return img['src'] if img else None
+        except:
+            return None
+    
+    def _extract_image_src(self, element):
+        """Extract any image source"""
+        try:
+            img = element.find('img')
+            if img and 'src' in img.attrs:
+                src = img['src']
+                # Make absolute URL if relative
+                if not src.startswith('http'):
+                    src = 'https://www.jailbase.com' + src
+                return src
+            return None
+        except:
+            return None
+    
+    def _parse_charges(self, charges_elem):
+        """Parse charges from element"""
+        try:
+            text = charges_elem.text.strip()
+            # Split by common delimiters
+            charges = re.split(r'[;,\n]', text)
+            return [c.strip() for c in charges if c.strip()]
+        except:
+            return ['N/A']
+    
+    def _generate_booking_id(self):
+        """Generate a booking ID"""
+        return f"BK{datetime.now().strftime('%Y%m%d%H%M%S')}"
+
+
+# Initialize scraper
+scraper = InmateScraper()
+
+
+@app.route('/api/search', methods=['GET'])
+def search_inmates():
+    """
+    Search inmates endpoint
+    Query parameters: q (query), state, county
+    """
+    query = request.args.get('q', '')
+    state = request.args.get('state', 'KS')
+    county = request.args.get('county', 'Sedgwick')
+    
+    try:
+        results = scraper.search_inmates(query, state, county)
+        
+        # Format response
+        formatted_results = []
+        for inmate in results:
+            formatted_results.append({
+                'id': inmate.get('booking_id'),
+                'name': inmate.get('name'),
+                'age': inmate.get('age', 'N/A'),
+                'gender': inmate.get('gender', 'N/A'),
+                'race': inmate.get('race', 'N/A'),
+                'bookingDate': inmate.get('booking_date'),
+                'facility': inmate.get('facility'),
+                'charges': inmate.get('charges', []),
+                'bail': inmate.get('bail', 0),
+                'mugshot': inmate.get('mugshot'),
+                'pod': 'N/A',
+                'details': []
+            })
+        
+        return jsonify({
+            'status': 'success',
+            'count': len(formatted_results),
+            'inmates': formatted_results,
+            'source': 'web_scraping'
+        })
+    
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'inmates': []
+        }), 500
+
+
+@app.route('/api/recent/<source_id>', methods=['GET'])
+def get_recent_bookings(source_id):
+    """
+    Get recent bookings for a specific county
+    """
+    try:
+        # Map source_id to county
+        county_map = {
+            'sedgwick-ks-w': 'Sedgwick',
+            'butler-ks-w': 'Butler',
+            'harvey-ks-w': 'Harvey'
+        }
+        
+        county = county_map.get(source_id, 'Sedgwick')
+        results = scraper.search_inmates('', 'KS', county)
+        
+        # Format response
+        formatted_results = []
+        for inmate in results[:20]:  # Limit to 20 recent
+            formatted_results.append({
+                'id': inmate.get('booking_id'),
+                'name': inmate.get('name'),
+                'age': inmate.get('age', 'N/A'),
+                'gender': inmate.get('gender', 'N/A'),
+                'race': inmate.get('race', 'N/A'),
+                'bookingDate': inmate.get('booking_date'),
+                'facility': inmate.get('facility'),
+                'charges': inmate.get('charges', []),
+                'bail': inmate.get('bail', 0),
+                'mugshot': inmate.get('mugshot'),
+                'pod': 'N/A',
+                'details': []
+            })
+        
+        return jsonify({
+            'status': 'success',
+            'records': formatted_results
+        })
+    
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'records': []
+        }), 500
+
+
+@app.route('/api/sources', methods=['GET'])
+def get_sources():
+    """
+    Get available data sources
+    """
+    sources = [
+        {
+            'source_id': 'sedgwick-ks-w',
+            'name': 'Sedgwick County Sheriff - Wichita',
+            'state_full': 'Kansas',
+            'city': 'Wichita',
+            'source_url': 'https://www.sedgwickcounty.org/detention/'
+        },
+        {
+            'source_id': 'butler-ks-w',
+            'name': 'Butler County Sheriff',
+            'state_full': 'Kansas',
+            'city': 'El Dorado',
+            'source_url': 'https://www.jailbase.com'
+        },
+        {
+            'source_id': 'harvey-ks-w',
+            'name': 'Harvey County Sheriff',
+            'state_full': 'Kansas',
+            'city': 'Newton',
+            'source_url': 'https://www.jailbase.com'
+        }
+    ]
+    
+    return jsonify({
+        'status': 'success',
+        'sources': sources
+    })
+
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({
+        'status': 'healthy',
+        'service': 'Inmate Scraper API',
+        'timestamp': datetime.now().isoformat()
+    })
+
+
+if __name__ == '__main__':
+    import os
+    port = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('DEBUG', 'False') == 'True'
+    
+    print("🚀 Inmate Scraper API Starting...")
+    print(f"📡 Server running on port {port}")
+    print("🔍 Web scraping enabled - Real data from public sources")
+    app.run(debug=debug, host='0.0.0.0', port=port)
