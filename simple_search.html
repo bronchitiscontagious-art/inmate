@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sedgwick County Inmate Search</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 36px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        .search-box {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            margin-bottom: 30px;
+        }
+
+        .search-box h2 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .search-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .search-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .search-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .results {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .results h2 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .inmate-card {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+
+        .inmate-card:hover {
+            border-color: #667eea;
+            transform: translateY(-3px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.2);
+        }
+
+        .inmate-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .inmate-name {
+            font-size: 20px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .booking-number {
+            background: #667eea;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .inmate-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }
+
+        .detail-item {
+            padding: 8px;
+            background: white;
+            border-radius: 8px;
+        }
+
+        .detail-label {
+            font-size: 11px;
+            color: #666;
+            text-transform: uppercase;
+            margin-bottom: 3px;
+        }
+
+        .detail-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏛️ Sedgwick County Inmate Search</h1>
+            <p>Real-time data from official Sedgwick County Sheriff website</p>
+        </div>
+
+        <div class="search-box">
+            <h2>🔍 Search for an Inmate</h2>
+            <form id="searchForm" onsubmit="searchInmates(event)">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="lastName">Last Name</label>
+                        <input 
+                            type="text" 
+                            id="lastName" 
+                            placeholder="e.g., Smith"
+                        >
+                    </div>
+                    <div class="form-group">
+                        <label for="firstName">First Name</label>
+                        <input 
+                            type="text" 
+                            id="firstName" 
+                            placeholder="e.g., John"
+                        >
+                    </div>
+                    <div class="form-group">
+                        <label for="bookingNumber">Booking Number</label>
+                        <input 
+                            type="text" 
+                            id="bookingNumber" 
+                            placeholder="e.g., 2024-12345"
+                        >
+                    </div>
+                </div>
+                <button type="submit" class="search-btn" id="searchBtn">
+                    🔍 Search Inmates
+                </button>
+            </form>
+        </div>
+
+        <div id="alertContainer"></div>
+
+        <div class="results" id="resultsContainer" style="display: none;">
+            <h2 id="resultsTitle">Search Results</h2>
+            <div id="resultsContent"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = window.location.origin;
+
+        async function searchInmates(event) {
+            event.preventDefault();
+
+            const lastName = document.getElementById('lastName').value.trim();
+            const firstName = document.getElementById('firstName').value.trim();
+            const bookingNumber = document.getElementById('bookingNumber').value.trim();
+
+            // Validation
+            if (!lastName && !firstName && !bookingNumber) {
+                showAlert('Please enter at least one search field', 'error');
+                return;
+            }
+
+            // Show loading
+            showLoading();
+
+            // Build query string
+            const params = new URLSearchParams();
+            if (lastName) params.append('last_name', lastName);
+            if (firstName) params.append('first_name', firstName);
+            if (bookingNumber) params.append('booking_number', bookingNumber);
+
+            try {
+                const response = await fetch(`${API_URL}/api/search?${params.toString()}`);
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    displayResults(data.inmates, data.count);
+                    showAlert(`Found ${data.count} result(s)`, 'success');
+                } else {
+                    showEmpty();
+                    showAlert(data.message || 'No results found', 'info');
+                }
+            } catch (error) {
+                console.error('Search error:', error);
+                showEmpty();
+                showAlert('Search failed. Please try again.', 'error');
+            }
+        }
+
+        function displayResults(inmates, count) {
+            const resultsContainer = document.getElementById('resultsContainer');
+            const resultsContent = document.getElementById('resultsContent');
+            const resultsTitle = document.getElementById('resultsTitle');
+
+            resultsTitle.textContent = `Search Results (${count} found)`;
+
+            let html = '';
+
+            inmates.forEach(inmate => {
+                html += `
+                    <div class="inmate-card">
+                        <div class="inmate-header">
+                            <div class="inmate-name">${inmate.name || 'Unknown'}</div>
+                            <div class="booking-number">${inmate.booking_number || 'N/A'}</div>
+                        </div>
+                        <div class="inmate-details">
+                            <div class="detail-item">
+                                <div class="detail-label">Booking Date</div>
+                                <div class="detail-value">${inmate.booking_date || 'N/A'}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Age</div>
+                                <div class="detail-value">${inmate.age || 'N/A'}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Gender</div>
+                                <div class="detail-value">${inmate.gender || 'N/A'}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Race</div>
+                                <div class="detail-value">${inmate.race || 'N/A'}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Facility</div>
+                                <div class="detail-value">${inmate.facility || 'N/A'}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            resultsContent.innerHTML = html;
+            resultsContainer.style.display = 'block';
+        }
+
+        function showLoading() {
+            const resultsContainer = document.getElementById('resultsContainer');
+            const resultsContent = document.getElementById('resultsContent');
+
+            resultsContent.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Searching Sedgwick County records...</p>
+                </div>
+            `;
+
+            resultsContainer.style.display = 'block';
+            document.getElementById('searchBtn').disabled = true;
+        }
+
+        function showEmpty() {
+            const resultsContainer = document.getElementById('resultsContainer');
+            const resultsContent = document.getElementById('resultsContent');
+
+            resultsContent.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">🔍</div>
+                    <h3>No Results Found</h3>
+                    <p>Try different search criteria</p>
+                </div>
+            `;
+
+            resultsContainer.style.display = 'block';
+            document.getElementById('searchBtn').disabled = false;
+        }
+
+        function showAlert(message, type) {
+            const alertContainer = document.getElementById('alertContainer');
+            
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            
+            alertContainer.innerHTML = '';
+            alertContainer.appendChild(alert);
+
+            document.getElementById('searchBtn').disabled = false;
+
+            // Auto remove after 5 seconds
+            setTimeout(() => {
+                alert.remove();
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
